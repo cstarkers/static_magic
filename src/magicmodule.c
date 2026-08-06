@@ -1,5 +1,6 @@
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
+#include 
 
 static PyObject *
 get_magic(PyObject *self, PyObject *args)
