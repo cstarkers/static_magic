@@ -1,0 +1,9 @@
+# Generated at build time from third_party/file -- see setup.py
+py_magic/magic.mgc
+py_magic/_magic*.so
+
+build/
+dist/
+*.egg-info/
+__pycache__/
+venv/
