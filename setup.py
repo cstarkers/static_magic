@@ -83,6 +83,10 @@ def build_libmagic(build_dir, *, database):
         subprocess.check_call(["make", "-C", "src", "-j", jobs], cwd=build_dir)
         subprocess.check_call(["make", "-C", "magic"], cwd=build_dir)
         return build_dir / "magic" / "magic.mgc"
+    # magic.h is generated (it's in BUILT_SOURCES), and only the default target
+    # generates BUILT_SOURCES, so ask for it before building just the library.
+    # Without it, a system libmagic's magic.h can be picked up instead.
+    subprocess.check_call(["make", "-C", "src", "magic.h"], cwd=build_dir)
     subprocess.check_call(["make", "-C", "src", "-j", jobs, "libmagic.la"], cwd=build_dir)
     return None
 
