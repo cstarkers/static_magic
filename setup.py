@@ -2,9 +2,14 @@ import os, re, shutil, subprocess
 from pathlib import Path
 from setuptools import Extension, setup
 from setuptools.command.build_ext import build_ext
+from setuptools.command.sdist import sdist
 
 HERE = Path(__file__).parent.resolve()
 FILE_SRC = HERE / "third_party" / "file"
+
+# The third part of the version: bump for a bindings-only release, reset to 0
+# when the libmagic submodule moves to a new release. See README, "Upgrading libmagic".
+BINDING_REVISION = 0
 
 CONFIGURE_ARGS = [
   "--disable-shared", "--enable-static", "--with-pic",
@@ -32,16 +37,28 @@ def check_thread_safe_locale(config_h):
         )
 
 
+def ensure_configure():
+    # A git checkout of file has no configure script; generating one needs
+    # autotools. sdists ship it pre-generated, so installing from one doesn't.
+    if not (FILE_SRC / "configure.ac").exists():
+        raise SystemExit("third_party/file is empty — run: git submodule update --init")
+    if not (FILE_SRC / "configure").exists():
+        subprocess.check_call(["autoreconf", "-fi"], cwd=FILE_SRC)
+
+
+class sdist_with_configure(sdist):
+    def run(self):
+        ensure_configure()   # before the file list is built, so configure is in it
+        super().run()
+
+
 class build_ext_static_magic(build_ext):
     def run(self):
-        if not (FILE_SRC / "configure.ac").exists():
-          raise SystemExit("third_party/file is empty — run: git submodule update --init")
+        ensure_configure()
 
         build_dir = Path(self.build_temp).resolve() / "libmagic"
         build_dir.mkdir(parents=True, exist_ok=True)
 
-        if not (FILE_SRC / "configure").exists():
-            subprocess.check_call(["autoreconf", "-fi"], cwd=FILE_SRC)
         if not (build_dir / "Makefile").exists():
             subprocess.check_call([str(FILE_SRC / "configure"), *CONFIGURE_ARGS], cwd=build_dir)
         check_thread_safe_locale(build_dir / "config.h")
@@ -68,10 +85,10 @@ class build_ext_static_magic(build_ext):
             shutil.copy(mgc, dest / "magic.mgc")
 
 setup(
-  version=f"{libmagic_version()}.0",   # -> 5.45.0; everything else lives in pyproject.toml
+  version=f"{libmagic_version()}.{BINDING_REVISION}",   # -> 5.45.0; everything else lives in pyproject.toml
   packages=["py_magic"],
   package_dir={"": "src"},
   package_data={"py_magic": ["magic.mgc", "py.typed", "_magic.pyi"]},
   ext_modules=[Extension("py_magic._magic", sources=["src/_magic.c"])],
-  cmdclass={"build_ext": build_ext_static_magic},
+  cmdclass={"build_ext": build_ext_static_magic, "sdist": sdist_with_configure},
 )

@@ -1,0 +1,104 @@
+name: Release
+
+# Doesn't run on ordinary pushes. A manual run builds and tests wheels without
+# publishing (use it to try out changes to the build); pushing a v* tag also
+# publishes to TestPyPI, then waits for approval before publishing to PyPI.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sdist:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - name: Install autotools
+        # Only needed here: the sdist ships libmagic's generated configure, so
+        # the wheel builds below don't need autotools.
+        run: sudo apt-get update && sudo apt-get install -y autoconf automake libtool
+      - run: python -m pip install build
+      - run: python -m build --sdist
+      - name: Check the tag matches the package version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          expected="dist/py_magic-${GITHUB_REF_NAME#v}.tar.gz"
+          if [ ! -f "$expected" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME doesn't match the built sdist: $(ls dist)"
+            exit 1
+          fi
+      - uses: actions/upload-artifact@v7
+        with:
+          name: sdist
+          path: dist/*.tar.gz
+
+  wheels:
+    needs: sdist
+    strategy:
+      fail-fast: false
+      matrix:
+        # Native runners only: building the magic database runs the freshly
+        # compiled `file` binary, so cross-compiling isn't an option.
+        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: sdist
+          path: sdist
+      - name: Find the sdist
+        id: sdist
+        run: echo "path=$(ls sdist/*.tar.gz)" >> "$GITHUB_OUTPUT"
+      # Building from the sdist (not the checkout) tests the sdist on every
+      # platform. Build and test settings are in pyproject.toml.
+      - uses: pypa/cibuildwheel@v4.2.1
+        with:
+          package-dir: ${{ steps.sdist.outputs.path }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: wheels-${{ matrix.os }}
+          path: wheelhouse/*.whl
+
+  testpypi:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [sdist, wheels]
+    runs-on: ubuntu-24.04
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/project/py_magic/
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: pypa/gh-action-pypi-publish@v1.14.2
+        with:
+          repository-url: https://test.pypi.org/legacy/
+
+  pypi:
+    # The pypi environment requires approval, so this waits until you've
+    # checked the TestPyPI release.
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: testpypi
+    runs-on: ubuntu-24.04
+    environment:
+      name: pypi
+      url: https://pypi.org/project/py_magic/
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: pypa/gh-action-pypi-publish@v1.14.2

@@ -29,3 +29,16 @@ Issues = "https://github.com/cstarkers/py_magic/issues"
 
 [project.optional-dependencies]
 test = ["pytest"]
+
+[tool.cibuildwheel]
+build = "cp312-* cp313-* cp314-* cp314t-*"
+skip = "*-musllinux_*"
+test-requires = ["pytest"]
+# Copy only the tests into a scratch directory, so they run against the
+# installed wheel rather than the source tree.
+test-sources = ["tests"]
+test-command = "python -m pytest -p no:cacheprovider"
+
+[tool.cibuildwheel.macos]
+archs = ["arm64"]
+environment = { MACOSX_DEPLOYMENT_TARGET = "11.0" }
