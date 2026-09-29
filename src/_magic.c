@@ -146,14 +146,25 @@ static PyMethodDef module_methods[] = {
     {"libmagic_version", libmagic_version, METH_NOARGS, "The version of the statically linked libmagic, e.g. 545."},
     {NULL, NULL, 0, NULL}};
 
+// The module keeps no state of its own: each libmagic handle lives in its
+// capsule, and py_magic.Magic serialises access to it. So it is safe both in
+// subinterpreters and without the GIL.
+static PyModuleDef_Slot module_slots[] = {
+    {Py_mod_multiple_interpreters, Py_MOD_PER_INTERPRETER_GIL_SUPPORTED},
+#if PY_VERSION_HEX >= 0x030D0000
+    {Py_mod_gil, Py_MOD_GIL_NOT_USED},
+#endif
+    {0, NULL}};
+
 static struct PyModuleDef magic_module = {
         PyModuleDef_HEAD_INIT,
         .m_name = "py_magic._magic",
         .m_doc = "A versioned wrapper on libmagic",
-        .m_size = -1,
+        .m_size = 0,
         .m_methods = module_methods,
+        .m_slots = module_slots,
 };
 
 PyMODINIT_FUNC PyInit__magic(void) {
-    return PyModule_Create(&magic_module);
+    return PyModuleDef_Init(&magic_module);
 }

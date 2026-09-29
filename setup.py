@@ -18,6 +18,20 @@ def libmagic_version():
   return re.search(r"AC_INIT\(\[file\],\[([^\]]+)\]", text).group(1)
 
 
+def check_thread_safe_locale(config_h):
+    # libmagic's regex code switches to the C locale around each match. With
+    # newlocale/uselocale/freelocale it does that per thread; without them it
+    # falls back to setlocale(), which is process-wide and races with every
+    # other thread. py_magic promises thread safety, so refuse to build that.
+    defined = set(re.findall(r"^#define (HAVE_\w+) 1$", config_h.read_text(), re.M))
+    missing = {"HAVE_NEWLOCALE", "HAVE_USELOCALE", "HAVE_FREELOCALE"} - defined
+    if missing:
+        raise SystemExit(
+            f"libmagic's configure did not find {', '.join(sorted(missing))} on this platform; "
+            "it would switch locales process-wide, which is not thread-safe."
+        )
+
+
 class build_ext_static_magic(build_ext):
     def run(self):
         if not (FILE_SRC / "configure.ac").exists():
@@ -30,6 +44,7 @@ class build_ext_static_magic(build_ext):
             subprocess.check_call(["autoreconf", "-fi"], cwd=FILE_SRC)
         if not (build_dir / "Makefile").exists():
             subprocess.check_call([str(FILE_SRC / "configure"), *CONFIGURE_ARGS], cwd=build_dir)
+        check_thread_safe_locale(build_dir / "config.h")
 
         jobs = str(os.cpu_count() or 1)
         subprocess.check_call(["make", "-C", "src", "-j", jobs], cwd=build_dir)  # libmagic.a + file

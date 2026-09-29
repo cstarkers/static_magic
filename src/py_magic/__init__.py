@@ -7,7 +7,6 @@ package's version, so py_magic 5.45.* is always libmagic 5.45.
 from __future__ import annotations
 
 import atexit
-import functools
 import os
 import threading
 from collections.abc import Buffer
@@ -79,9 +78,19 @@ class Magic:
             return _magic.describe_bytes(self._magic, data, True)
 
 
-@functools.cache
+_default_magic: Magic | None = None
+_default_lock = threading.Lock()
+
+
 def _default() -> Magic:
-    return Magic()
+    # Loading the database is expensive, so make sure concurrent first calls
+    # (which really are concurrent on free-threaded builds) only load it once.
+    global _default_magic
+    if _default_magic is None:
+        with _default_lock:
+            if _default_magic is None:
+                _default_magic = Magic()
+    return _default_magic
 
 
 def get_description_file(path: StrOrBytesPath) -> str:

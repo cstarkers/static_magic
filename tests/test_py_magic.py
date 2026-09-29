@@ -1,5 +1,7 @@
 import gc
 import os
+import sys
+import sysconfig
 import threading
 from importlib.metadata import version
 
@@ -19,6 +21,15 @@ def test_libmagic_version_matches_package_version():
     # The package promises py_magic X.Y.* bundles libmagic X.Y.
     major, minor = version("py_magic").split(".")[:2]
     assert py_magic.libmagic_version() == int(major) * 100 + int(minor)
+
+
+@pytest.mark.skipif(
+    not sysconfig.get_config_var("Py_GIL_DISABLED"), reason="needs a free-threaded build"
+)
+def test_import_keeps_gil_disabled():
+    # py_magic was imported at the top of this file; an extension without the
+    # Py_mod_gil slot would have switched the GIL back on at that point.
+    assert not sys._is_gil_enabled()
 
 
 def test_describe_file():
