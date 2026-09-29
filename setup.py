@@ -57,6 +57,6 @@ setup(
   packages=["py_magic"],
   package_dir={"": "src"},
   package_data={"py_magic": ["magic.mgc"]},
-  ext_modules=[Extension("py_magic._magic", sources=["src/magicmodule.c"])],
+  ext_modules=[Extension("py_magic._magic", sources=["src/_magic.c"])],
   cmdclass={"build_ext": build_ext_static_magic},
 )

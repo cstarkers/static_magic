@@ -3,7 +3,7 @@
 #include <errno.h>
 #include <magic.h> // resolves to the build tree's header: setup.py puts it on -I ahead of /usr/include
 
-static const char _magic_pointer_capsule_name[] = "_magic.magic_pointer";
+static const char _magic_pointer_capsule_name[] = "py_magic._magic.handle";
 
 // MAGIC_ERROR makes libmagic return NULL (and set magic_errno) on I/O errors,
 // instead of returning the error message as if it were a successful result.
@@ -146,14 +146,14 @@ static PyMethodDef module_methods[] = {
     {"libmagic_version", libmagic_version, METH_NOARGS, "The version of the statically linked libmagic, e.g. 545."},
     {NULL, NULL, 0, NULL}};
 
-static struct PyModuleDef py_magic = {
+static struct PyModuleDef magic_module = {
         PyModuleDef_HEAD_INIT,
-        .m_name = "_magic",
+        .m_name = "py_magic._magic",
         .m_doc = "A versioned wrapper on libmagic",
         .m_size = -1,
         .m_methods = module_methods,
 };
 
 PyMODINIT_FUNC PyInit__magic(void) {
-    return PyModule_Create(&py_magic);
+    return PyModule_Create(&magic_module);
 }

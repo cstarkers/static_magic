@@ -22,5 +22,10 @@ classifiers = [
     "Topic :: System :: Filesystems",
 ]
 
+[project.urls]
+Homepage = "https://github.com/cstarkers/py_magic"
+Source = "https://github.com/cstarkers/py_magic"
+Issues = "https://github.com/cstarkers/py_magic/issues"
+
 [project.optional-dependencies]
 test = ["pytest"]
