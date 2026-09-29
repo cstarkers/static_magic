@@ -9,8 +9,16 @@ import pytest
 
 import py_magic
 
-SETUP_PY = os.path.join(os.path.dirname(__file__), "..", "setup.py")
 PDF = b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n"
+
+
+@pytest.fixture
+def script(tmp_path):
+    # The tests run against an installed wheel, away from the source tree, so
+    # they bring their own sample file rather than pointing at one in the repo.
+    path = tmp_path / "script.py"
+    path.write_text("#!/usr/bin/env python3\nimport sys\n\nprint(sys.argv)\n")
+    return path
 
 
 def test_database_is_shipped():
@@ -32,9 +40,9 @@ def test_import_keeps_gil_disabled():
     assert not sys._is_gil_enabled()
 
 
-def test_describe_file():
-    assert "Python script" in py_magic.get_description_file(SETUP_PY)
-    assert py_magic.get_mime_type_file(SETUP_PY) == "text/x-script.python"
+def test_describe_file(script):
+    assert "Python script" in py_magic.get_description_file(script)
+    assert py_magic.get_mime_type_file(script) == "text/x-script.python"
 
 
 def test_describe_bytes():
@@ -54,9 +62,9 @@ def test_bad_database_raises(tmp_path):
         py_magic.Magic(database=tmp_path / "missing.mgc")
 
 
-def test_handles_are_released():
+def test_handles_are_released(script):
     for _ in range(20):
-        py_magic.Magic().get_mime_type_file(SETUP_PY)
+        py_magic.Magic().get_mime_type_file(script)
     gc.collect()
 
 

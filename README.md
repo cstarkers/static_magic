@@ -69,6 +69,17 @@ python -m pytest tests
 
 Building from git needs autotools (`autoconf`, `automake`, `libtool`) to generate libmagic's `configure`. Source distributions ship it pre-generated, so installing from PyPI doesn't. After changing the C code, run `pip install -e .` again.
 
+### Upgrading libmagic
+
+The package version comes from the submodule, so moving to a new libmagic is:
+
+1. Check out the new release tag in the submodule, e.g. `git -C third_party/file checkout FILE5_46`.
+2. Reset `BINDING_REVISION` in `setup.py` to `0`.
+3. `rm -rf build && pip install -e . && python -m pytest tests`. `test_libmagic_version_matches_package_version` checks the compiled libmagic matches the new version.
+4. Commit the submodule bump and tag `v5.46.0`.
+
+For a bindings-only release on the same libmagic, bump `BINDING_REVISION` instead.
+
 ## License
 
 BSD-2-Clause, see [LICENSE](LICENSE). libmagic's own licence is in [LICENSE-libmagic](LICENSE-libmagic) and is included in every wheel.

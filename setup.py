@@ -71,7 +71,7 @@ setup(
   version=f"{libmagic_version()}.0",   # -> 5.45.0; everything else lives in pyproject.toml
   packages=["py_magic"],
   package_dir={"": "src"},
-  package_data={"py_magic": ["magic.mgc"]},
+  package_data={"py_magic": ["magic.mgc", "py.typed", "_magic.pyi"]},
   ext_modules=[Extension("py_magic._magic", sources=["src/_magic.c"])],
   cmdclass={"build_ext": build_ext_static_magic},
 )
