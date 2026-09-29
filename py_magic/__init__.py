@@ -4,13 +4,29 @@ The libmagic version this was built against is the first two components of this
 package's version, so py_magic 5.45.* is always libmagic 5.45.
 """
 
+from __future__ import annotations
+
 import atexit
+import functools
+import os
+import threading
+from collections.abc import Buffer
 from contextlib import ExitStack
 from importlib.resources import as_file, files
 
 from . import _magic
 
-__all__ = ["MAGIC_DB", "get_magic_number", "get_magic_mime_type_file", "get_magic_description_file"]
+__all__ = [
+    "MAGIC_DB",
+    "Magic",
+    "libmagic_version",
+    "get_description_file",
+    "get_mime_type_file",
+    "get_description_bytes",
+    "get_mime_type_bytes",
+]
+
+StrOrBytesPath = str | bytes | os.PathLike[str] | os.PathLike[bytes]
 
 # libmagic needs a real filesystem path, but importlib.resources hands back a
 # Traversable that isn't guaranteed to be one. as_file() materialises it; the
@@ -22,25 +38,67 @@ atexit.register(_resources.close)
 MAGIC_DB = str(_resources.enter_context(as_file(files(__package__) / "magic.mgc")))
 
 
-def get_magic_number():
-    """Return the magic number."""
-    return _magic.get_magic_number()
+def libmagic_version() -> int:
+    """Return the version of the bundled libmagic, e.g. 545 for 5.45."""
+    return _magic.libmagic_version()
 
 
-def get_magic_description_file(path):
-    """Describe the file at `path`.
+class Magic:
+    """A loaded libmagic database.
 
-    With is_mime=False (the default) this is the descriptive string, e.g.
-    "ELF 64-bit LSB pie executable, x86-64, ...". With is_mime=True it's the
-    MIME type, e.g. "application/x-pie-executable".
+    Loading the database is the expensive part, so create one of these and reuse
+    it. Instances are safe to share between threads; calls on the same instance
+    are serialised.
+
+    Missing or unreadable files raise OSError (e.g. FileNotFoundError).
     """
-    return _magic.get_magic_for_file(MAGIC_DB, path, False)
 
-def get_magic_mime_type_file(path):
-    """Describe the file at `path`.
+    def __init__(self, *, database: StrOrBytesPath = MAGIC_DB) -> None:
+        self._magic = _magic.init_magic(database)
+        # libmagic handles are not reentrant, and each query sets the handle's flags.
+        self._lock = threading.Lock()
 
-    With is_mime=False (the default) this is the descriptive string, e.g.
-    "ELF 64-bit LSB pie executable, x86-64, ...". With is_mime=True it's the
-    MIME type, e.g. "application/x-pie-executable".
-    """
-    return _magic.get_magic_for_file(MAGIC_DB, path, True)
+    def get_description_file(self, path: StrOrBytesPath) -> str:
+        """Describe the file at `path`, e.g. "ELF 64-bit LSB pie executable, ..."."""
+        with self._lock:
+            return _magic.describe_file(self._magic, path, False)
+
+    def get_mime_type_file(self, path: StrOrBytesPath) -> str:
+        """Return the MIME type of the file at `path`, e.g. "application/pdf"."""
+        with self._lock:
+            return _magic.describe_file(self._magic, path, True)
+
+    def get_description_bytes(self, data: Buffer) -> str:
+        """Describe the contents of `data`."""
+        with self._lock:
+            return _magic.describe_bytes(self._magic, data, False)
+
+    def get_mime_type_bytes(self, data: Buffer) -> str:
+        """Return the MIME type of the contents of `data`."""
+        with self._lock:
+            return _magic.describe_bytes(self._magic, data, True)
+
+
+@functools.cache
+def _default() -> Magic:
+    return Magic()
+
+
+def get_description_file(path: StrOrBytesPath) -> str:
+    """Describe the file at `path` using a shared default Magic."""
+    return _default().get_description_file(path)
+
+
+def get_mime_type_file(path: StrOrBytesPath) -> str:
+    """Return the MIME type of the file at `path` using a shared default Magic."""
+    return _default().get_mime_type_file(path)
+
+
+def get_description_bytes(data: Buffer) -> str:
+    """Describe the contents of `data` using a shared default Magic."""
+    return _default().get_description_bytes(data)
+
+
+def get_mime_type_bytes(data: Buffer) -> str:
+    """Return the MIME type of the contents of `data` using a shared default Magic."""
+    return _default().get_mime_type_bytes(data)

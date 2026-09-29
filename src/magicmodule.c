@@ -1,74 +1,159 @@
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
-#include <magic.h> // TODO this is hopefully finding the temp build version, not to my system version, but I'm not 100% confident about that
+#include <errno.h>
+#include <magic.h> // resolves to the build tree's header: setup.py puts it on -I ahead of /usr/include
 
-static PyObject * get_magic_number(PyObject *self, PyObject *args) {
-    return PyLong_FromLong(32);
+static const char _magic_pointer_capsule_name[] = "_magic.magic_pointer";
+
+// MAGIC_ERROR makes libmagic return NULL (and set magic_errno) on I/O errors,
+// instead of returning the error message as if it were a successful result.
+#define BASE_FLAGS MAGIC_ERROR
+
+static void destroy_magic(PyObject *cap){
+    magic_t magic = PyCapsule_GetPointer(cap, _magic_pointer_capsule_name);
+    if (magic != NULL)
+        magic_close(magic);
 }
 
+// PyCapsule_New rejects NULL pointers, so a NULL here always means failure,
+// and PyCapsule_GetPointer has already set the exception.
+static int convert_capsule(PyObject *obj, void *out){
+    magic_t magic = PyCapsule_GetPointer(obj, _magic_pointer_capsule_name);
+    if (magic == NULL)
+        return 0;
+    *(magic_t *)out = magic;
+    return 1;
+}
 
-// get_magic_for_file(db_path, filename, is_mime) -> str
-//
-// db_path is the magic.mgc shipped inside this package; py_magic/__init__.py
-// resolves it and passes it in, so the C side never has to guess where it is.
-// is_mime is a bool, indicating whether to return a mimetype or a normal magic description
-static PyObject * get_magic_for_file(PyObject *self, PyObject *args){
-    PyObject *db = NULL, *path = NULL, *result = NULL;
-    int mime = 0;
+// Raise from a failed libmagic query. `target` is attached to OSErrors as the
+// filename; pass NULL when there isn't one (e.g. querying a buffer).
+static void raise_magic_error(magic_t magic, PyObject *target){
+    int err = magic_errno(magic);
+    if (err != 0) {
+        errno = err;
+        PyErr_SetFromErrnoWithFilenameObject(PyExc_OSError, target);
+    } else {
+        const char *msg = magic_error(magic);
+        PyErr_Format(PyExc_RuntimeError, "libmagic: %s", msg ? msg : "unknown error");
+    }
+}
+
+static int set_query_flags(magic_t magic, int mime){
+    if (magic_setflags(magic, BASE_FLAGS | (mime ? MAGIC_MIME_TYPE : 0)) != 0) {
+        PyErr_SetString(PyExc_RuntimeError, "magic_setflags failed");
+        return -1;
+    }
+    return 0;
+}
+
+// init_magic(db_path: str | bytes | os.PathLike) -> capsule
+static PyObject *init_magic(PyObject *Py_UNUSED(self), PyObject *args){
+    PyObject *db = NULL, *result = NULL;
     magic_t magic = NULL;
-    const char *mime_type;
 
-    if (!PyArg_ParseTuple(args, "O&O&p",
-                          PyUnicode_FSConverter, &db,
-                          PyUnicode_FSConverter, &path,
-                          &mime))
+    if (!PyArg_ParseTuple(args, "O&", PyUnicode_FSConverter, &db))
         return NULL;
 
-    int FLAGS = MAGIC_NONE;
-
-    if (mime){
-        FLAGS |= MAGIC_MIME_TYPE;
-    }
-
-    magic = magic_open(FLAGS);
+    magic = magic_open(BASE_FLAGS);
     if (magic == NULL) {
         PyErr_SetString(PyExc_RuntimeError, "magic_open failed");
         goto done;
     }
     if (magic_load(magic, PyBytes_AS_STRING(db)) != 0) {
-        PyErr_Format(PyExc_RuntimeError, "magic_load: %s", magic_error(magic));
+        raise_magic_error(magic, NULL);
+        magic_close(magic);
         goto done;
     }
-    mime_type = magic_file(magic, PyBytes_AS_STRING(path));
-    if (mime_type == NULL) {
-        PyErr_Format(PyExc_RuntimeError, "magic_file: %s", magic_error(magic));
-        goto done;
-    }
-    result = PyUnicode_FromString(mime_type);
+    result = PyCapsule_New(magic, _magic_pointer_capsule_name, destroy_magic);
+    if (result == NULL)
+        magic_close(magic);
 
 done:
-    if (magic != NULL)
-        magic_close(magic);
-    Py_XDECREF(db);
-    Py_XDECREF(path);
+    Py_DECREF(db);
     return result;
+}
+
+// describe_file(magic, path, is_mime) -> str
+static PyObject *describe_file(PyObject *Py_UNUSED(self), PyObject *args){
+    PyObject *target = NULL, *path = NULL, *result = NULL;
+    magic_t magic = NULL;
+    int mime = 0;
+    const char *description;
+
+    // Keep the original object around so OSError can report the filename as given.
+    if (!PyArg_ParseTuple(args, "O&Op", convert_capsule, &magic, &target, &mime))
+        return NULL;
+    if (!PyUnicode_FSConverter(target, &path))
+        return NULL;
+
+    if (set_query_flags(magic, mime) != 0)
+        goto done;
+
+    Py_BEGIN_ALLOW_THREADS
+    description = magic_file(magic, PyBytes_AS_STRING(path));
+    Py_END_ALLOW_THREADS
+
+    if (description == NULL) {
+        raise_magic_error(magic, target);
+        goto done;
+    }
+    result = PyUnicode_FromString(description);
+
+done:
+    Py_DECREF(path);
+    return result;
+}
+
+// describe_bytes(magic, data: bytes-like, is_mime) -> str
+static PyObject *describe_bytes(PyObject *Py_UNUSED(self), PyObject *args){
+    PyObject *result = NULL;
+    magic_t magic = NULL;
+    Py_buffer data;
+    int mime = 0;
+    const char *description;
+
+    if (!PyArg_ParseTuple(args, "O&y*p", convert_capsule, &magic, &data, &mime))
+        return NULL;
+
+    if (set_query_flags(magic, mime) != 0)
+        goto done;
+
+    Py_BEGIN_ALLOW_THREADS
+    description = magic_buffer(magic, data.buf, (size_t)data.len);
+    Py_END_ALLOW_THREADS
+
+    if (description == NULL) {
+        raise_magic_error(magic, NULL);
+        goto done;
+    }
+    result = PyUnicode_FromString(description);
+
+done:
+    PyBuffer_Release(&data);
+    return result;
+}
+
+// libmagic_version() -> int, e.g. 545 for libmagic 5.45
+static PyObject *libmagic_version(PyObject *Py_UNUSED(self), PyObject *Py_UNUSED(ignored)){
+    return PyLong_FromLong(magic_version());
 }
 
 
 static PyMethodDef module_methods[] = {
-    {"get_magic_number", get_magic_number, METH_VARARGS, "get the magic numbers."},
-    {"get_magic_for_file", get_magic_for_file, METH_VARARGS, "get the magic description of a file."},
+    {"init_magic", init_magic, METH_VARARGS, "Open a libmagic handle and load the given database."},
+    {"describe_file", describe_file, METH_VARARGS, "Describe the file at a path, optionally as a MIME type."},
+    {"describe_bytes", describe_bytes, METH_VARARGS, "Describe a bytes-like buffer, optionally as a MIME type."},
+    {"libmagic_version", libmagic_version, METH_NOARGS, "The version of the statically linked libmagic, e.g. 545."},
     {NULL, NULL, 0, NULL}};
 
 static struct PyModuleDef py_magic = {
         PyModuleDef_HEAD_INIT,
-        "_magic",
-        "A versioned wrapper on magic",
-        -1,            /* size of per-interpreter state of the module, or -1 if the module keeps state in global variables. */
-        module_methods
+        .m_name = "_magic",
+        .m_doc = "A versioned wrapper on libmagic",
+        .m_size = -1,
+        .m_methods = module_methods,
 };
 
 PyMODINIT_FUNC PyInit__magic(void) {
     return PyModule_Create(&py_magic);
 }
-

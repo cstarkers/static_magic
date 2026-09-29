@@ -53,11 +53,9 @@ class build_ext_static_magic(build_ext):
             shutil.copy(mgc, dest / "magic.mgc")
 
 setup(
-  name="py_magic",
-  version=f"{libmagic_version()}.0",   # -> 5.45.0, per your README's versioning scheme
-  description="An example of C extension made callable to the Python API.",
+  version=f"{libmagic_version()}.0",   # -> 5.45.0; everything else lives in pyproject.toml
   packages=["py_magic"],
   package_data={"py_magic": ["magic.mgc"]},
-  ext_modules=[Extension("py_magic._magic", sources=["src/magicmodule.c"], libraries=["m"])],
+  ext_modules=[Extension("py_magic._magic", sources=["src/magicmodule.c"])],
   cmdclass={"build_ext": build_ext_static_magic},
 )
