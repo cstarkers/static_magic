@@ -1,4 +1,4 @@
-import os, re, shutil, subprocess
+import os, re, shutil, subprocess, time
 from pathlib import Path
 from setuptools import Extension, setup
 from setuptools.command.build_ext import build_ext
@@ -44,6 +44,20 @@ def ensure_configure():
         raise SystemExit("third_party/file is empty — run: git submodule update --init")
     if not (FILE_SRC / "configure").exists():
         subprocess.check_call(["autoreconf", "-fi"], cwd=FILE_SRC)
+    if (HERE / "PKG-INFO").exists():
+        freshen_generated_autotools_files()
+
+
+def freshen_generated_autotools_files():
+    # libmagic's Makefiles regenerate configure & co. with autotools whenever
+    # they look older than configure.ac. Some sdist unpackers (uv, for one)
+    # don't preserve mtimes, which makes that comparison arbitrary. Give every
+    # generated file one timestamp from after the unpack, so none looks stale.
+    # Only done for sdists: in a git checkout, stale really does mean stale.
+    now = time.time()
+    generated = ["aclocal.m4", "configure", "config.h.in", *FILE_SRC.glob("**/Makefile.in")]
+    for path in generated:
+        os.utime(FILE_SRC / path, (now, now))
 
 
 class sdist_with_configure(sdist):
