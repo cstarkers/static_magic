@@ -43,11 +43,11 @@ class build_ext_static_magic(build_ext):
 
         # Ship the compiled database next to the extension. libmagic's built-in
         # default path (/usr/local/share/misc/magic) does not exist on a user's
-        # machine, so py_magic/__init__.py loads this copy explicitly.
+        # machine, so src/py_magic/__init__.py loads this copy explicitly.
         mgc = build_dir / "magic" / "magic.mgc"
         targets = [Path(self.build_lib) / "py_magic"]
         if self.inplace:
-            targets.append(HERE / "py_magic")   # editable installs never touch build_lib
+            targets.append(HERE / "src" / "py_magic")   # editable installs never touch build_lib
         for dest in targets:
             dest.mkdir(parents=True, exist_ok=True)
             shutil.copy(mgc, dest / "magic.mgc")
@@ -55,6 +55,7 @@ class build_ext_static_magic(build_ext):
 setup(
   version=f"{libmagic_version()}.0",   # -> 5.45.0; everything else lives in pyproject.toml
   packages=["py_magic"],
+  package_dir={"": "src"},
   package_data={"py_magic": ["magic.mgc"]},
   ext_modules=[Extension("py_magic._magic", sources=["src/magicmodule.c"])],
   cmdclass={"build_ext": build_ext_static_magic},
