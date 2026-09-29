@@ -3,7 +3,7 @@ requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "py_magic"
+name = "static_magic"
 # X.Y comes from the bundled libmagic's configure.ac; see setup.py.
 dynamic = ["version"]
 description = "libmagic bindings with a statically linked, version-pinned libmagic and bundled database."
@@ -23,9 +23,9 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/cstarkers/py_magic"
-Source = "https://github.com/cstarkers/py_magic"
-Issues = "https://github.com/cstarkers/py_magic/issues"
+Homepage = "https://github.com/cstarkers/static_magic"
+Source = "https://github.com/cstarkers/static_magic"
+Issues = "https://github.com/cstarkers/static_magic/issues"
 
 [project.optional-dependencies]
 test = ["pytest"]

@@ -7,7 +7,7 @@ from importlib.metadata import version
 
 import pytest
 
-import py_magic
+import static_magic
 
 PDF = b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n"
 
@@ -22,55 +22,55 @@ def script(tmp_path):
 
 
 def test_database_is_shipped():
-    assert os.path.isfile(py_magic.MAGIC_DB)
+    assert os.path.isfile(static_magic.MAGIC_DB)
 
 
 def test_libmagic_version_matches_package_version():
-    # The package promises py_magic X.Y.* bundles libmagic X.Y.
-    major, minor = version("py_magic").split(".")[:2]
-    assert py_magic.libmagic_version() == int(major) * 100 + int(minor)
+    # The package promises static_magic X.Y.* bundles libmagic X.Y.
+    major, minor = version("static_magic").split(".")[:2]
+    assert static_magic.libmagic_version() == int(major) * 100 + int(minor)
 
 
 @pytest.mark.skipif(
     not sysconfig.get_config_var("Py_GIL_DISABLED"), reason="needs a free-threaded build"
 )
 def test_import_keeps_gil_disabled():
-    # py_magic was imported at the top of this file; an extension without the
+    # static_magic was imported at the top of this file; an extension without the
     # Py_mod_gil slot would have switched the GIL back on at that point.
     assert not sys._is_gil_enabled()
 
 
 def test_describe_file(script):
-    assert "Python script" in py_magic.get_description_file(script)
-    assert py_magic.get_mime_type_file(script) == "text/x-script.python"
+    assert "Python script" in static_magic.get_description_file(script)
+    assert static_magic.get_mime_type_file(script) == "text/x-script.python"
 
 
 def test_describe_bytes():
-    assert py_magic.get_description_bytes(PDF) == "PDF document, version 1.4"
-    assert py_magic.get_mime_type_bytes(memoryview(PDF)) == "application/pdf"
+    assert static_magic.get_description_bytes(PDF) == "PDF document, version 1.4"
+    assert static_magic.get_mime_type_bytes(memoryview(PDF)) == "application/pdf"
 
 
 def test_missing_file_raises(tmp_path):
     missing = tmp_path / "missing"
     with pytest.raises(FileNotFoundError) as info:
-        py_magic.Magic().get_description_file(missing)
+        static_magic.Magic().get_description_file(missing)
     assert info.value.filename == missing
 
 
 def test_bad_database_raises(tmp_path):
     with pytest.raises(RuntimeError):
-        py_magic.Magic(database=tmp_path / "missing.mgc")
+        static_magic.Magic(database=tmp_path / "missing.mgc")
 
 
 def test_handles_are_released(script):
     for _ in range(20):
-        py_magic.Magic().get_mime_type_file(script)
+        static_magic.Magic().get_mime_type_file(script)
     gc.collect()
 
 
 def test_shared_instance_across_threads():
     # Mixed mime/description queries on one instance must not race on flags.
-    m = py_magic.Magic()
+    m = static_magic.Magic()
     errors = []
 
     def worker(mime):

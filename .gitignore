@@ -1,6 +1,6 @@
 # Generated at build time from third_party/file -- see setup.py
-src/py_magic/magic.mgc
-src/py_magic/_magic*.so
+src/static_magic/magic.mgc
+src/static_magic/_magic*.so
 
 build/
 dist/

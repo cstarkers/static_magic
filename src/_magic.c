@@ -3,7 +3,7 @@
 #include <errno.h>
 #include <magic.h> // resolves to the build tree's header: setup.py puts it on -I ahead of /usr/include
 
-static const char _magic_pointer_capsule_name[] = "py_magic._magic.handle";
+static const char _magic_pointer_capsule_name[] = "static_magic._magic.handle";
 
 // MAGIC_ERROR makes libmagic return NULL (and set magic_errno) on I/O errors,
 // instead of returning the error message as if it were a successful result.
@@ -147,7 +147,7 @@ static PyMethodDef module_methods[] = {
     {NULL, NULL, 0, NULL}};
 
 // The module keeps no state of its own: each libmagic handle lives in its
-// capsule, and py_magic.Magic serialises access to it. So it is safe both in
+// capsule, and static_magic.Magic serialises access to it. So it is safe both in
 // subinterpreters and without the GIL.
 static PyModuleDef_Slot module_slots[] = {
     {Py_mod_multiple_interpreters, Py_MOD_PER_INTERPRETER_GIL_SUPPORTED},
@@ -158,7 +158,7 @@ static PyModuleDef_Slot module_slots[] = {
 
 static struct PyModuleDef magic_module = {
         PyModuleDef_HEAD_INIT,
-        .m_name = "py_magic._magic",
+        .m_name = "static_magic._magic",
         .m_doc = "A versioned wrapper on libmagic",
         .m_size = 0,
         .m_methods = module_methods,

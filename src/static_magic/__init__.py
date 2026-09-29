@@ -1,7 +1,7 @@
 """Versioned bindings for libmagic, statically linked and shipped with their database.
 
 The libmagic version this was built against is the first two components of this
-package's version, so py_magic 5.45.* is always libmagic 5.45.
+package's version, so static_magic 5.45.* is always libmagic 5.45.
 """
 
 from __future__ import annotations
