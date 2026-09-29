@@ -50,6 +50,17 @@ def test_describe_bytes():
     assert static_magic.get_mime_type_bytes(memoryview(PDF)) == "application/pdf"
 
 
+def test_database_is_the_shipped_one():
+    # Two equal-strength rules match a NumPy header, and which one answers
+    # depends on the order they were compiled in, which depends on the C
+    # library that compiled the database. Every wheel ships the database
+    # compiled with the sdist (on Linux), so this answer must be the same on
+    # every platform; a macOS-compiled database says "NumPy data file" instead.
+    header = b"{'descr': '<f8', 'fortran_order': False, 'shape': (2,), }".ljust(69) + b"\n"
+    npy = b"\x93NUMPY\x01\x00" + len(header).to_bytes(2, "little") + header + bytes(16)
+    assert static_magic.get_description_bytes(npy) == "NumPy array, version 1.0, header length 70"
+
+
 def test_missing_file_raises(tmp_path):
     missing = tmp_path / "missing"
     with pytest.raises(FileNotFoundError) as info:

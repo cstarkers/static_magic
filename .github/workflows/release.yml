@@ -45,8 +45,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Native runners only: building the magic database runs the freshly
-        # compiled `file` binary, so cross-compiling isn't an option.
+        # Native runners, so every wheel is tested on the architecture it's for.
         os: [ubuntu-24.04, ubuntu-24.04-arm, macos-15]
     runs-on: ${{ matrix.os }}
     steps:
@@ -67,9 +66,36 @@ jobs:
           name: wheels-${{ matrix.os }}
           path: wheelhouse/*.whl
 
+  same-database:
+    # Which libmagic rule answers for some files depends on the order the
+    # database was compiled in, which varies between C libraries. Every wheel
+    # must ship the database compiled with the sdist, not one of its own.
+    needs: [sdist, wheels]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Check every wheel ships the sdist's magic.mgc
+        run: |
+          set -eu
+          tar -xzf dist/*.tar.gz --wildcards --to-stdout '*/src/static_magic/magic.mgc' | sha256sum | cut -d' ' -f1 > expected
+          echo "sdist:  $(cat expected)"
+          status=0
+          for whl in dist/*.whl; do
+            got=$(unzip -p "$whl" static_magic/magic.mgc | sha256sum | cut -d' ' -f1)
+            echo "$(basename "$whl"): $got"
+            if [ "$got" != "$(cat expected)" ]; then
+              echo "::error::$(basename "$whl") ships a different magic.mgc from the sdist"
+              status=1
+            fi
+          done
+          exit $status
+
   testpypi:
     if: startsWith(github.ref, 'refs/tags/')
-    needs: [sdist, wheels]
+    needs: [sdist, wheels, same-database]
     runs-on: ubuntu-24.04
     environment:
       name: testpypi

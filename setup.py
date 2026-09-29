@@ -60,9 +60,44 @@ def freshen_generated_autotools_files():
         os.utime(FILE_SRC / path, (now, now))
 
 
-class sdist_with_configure(sdist):
+# The compiled database, shipped next to the extension. libmagic's built-in
+# default path (/usr/local/share/misc/magic) doesn't exist on a user's machine,
+# so src/static_magic/__init__.py loads this copy explicitly.
+SHIPPED_MGC = HERE / "src" / "static_magic" / "magic.mgc"
+
+
+def building_from_sdist():
+    return (HERE / "PKG-INFO").exists()
+
+
+def build_libmagic(build_dir, *, database):
+    """Build libmagic.a in build_dir, plus magic.mgc if `database` is true."""
+    build_dir.mkdir(parents=True, exist_ok=True)
+    if not (build_dir / "Makefile").exists():
+        subprocess.check_call([str(FILE_SRC / "configure"), *CONFIGURE_ARGS], cwd=build_dir)
+    check_thread_safe_locale(build_dir / "config.h")
+
+    jobs = str(os.cpu_count() or 1)
+    if database:
+        # Compiling the database runs the `file` binary built alongside libmagic.
+        subprocess.check_call(["make", "-C", "src", "-j", jobs], cwd=build_dir)
+        subprocess.check_call(["make", "-C", "magic"], cwd=build_dir)
+        return build_dir / "magic" / "magic.mgc"
+    subprocess.check_call(["make", "-C", "src", "-j", jobs, "libmagic.la"], cwd=build_dir)
+    return None
+
+
+class sdist_with_generated_files(sdist):
+    # Compiling the database sorts libmagic's rules by strength using the C
+    # library's qsort, and rules of equal strength land in whatever order that
+    # qsort leaves them. glibc and macOS differ, and the order decides which rule
+    # answers for some files. So the database is compiled once, here, and every
+    # wheel built from this sdist ships that same file.
     def run(self):
         ensure_configure()   # before the file list is built, so configure is in it
+        if not building_from_sdist():
+            mgc = build_libmagic(HERE / "build" / "sdist-libmagic", database=True)
+            shutil.copy(mgc, SHIPPED_MGC)
         super().run()
 
 
@@ -71,32 +106,24 @@ class build_ext_static_magic(build_ext):
         ensure_configure()
 
         build_dir = Path(self.build_temp).resolve() / "libmagic"
-        build_dir.mkdir(parents=True, exist_ok=True)
-
-        if not (build_dir / "Makefile").exists():
-            subprocess.check_call([str(FILE_SRC / "configure"), *CONFIGURE_ARGS], cwd=build_dir)
-        check_thread_safe_locale(build_dir / "config.h")
-
-        jobs = str(os.cpu_count() or 1)
-        subprocess.check_call(["make", "-C", "src", "-j", jobs], cwd=build_dir)  # libmagic.a + file
-        subprocess.check_call(["make", "-C", "magic"], cwd=build_dir)            # magic.mgc
+        # From an sdist, use the database it ships (build_py puts it in place);
+        # only a git checkout compiles its own.
+        use_shipped = building_from_sdist() and SHIPPED_MGC.exists()
+        mgc = build_libmagic(build_dir, database=not use_shipped)
 
         for ext in self.extensions:
-            ext.include_dirs.append(str(build_dir / "src"))         
+            ext.include_dirs.append(str(build_dir / "src"))
             ext.extra_objects.append(str(build_dir / "src" / ".libs" / "libmagic.a"))
 
         super().run()
 
-        # Ship the compiled database next to the extension. libmagic's built-in
-        # default path (/usr/local/share/misc/magic) does not exist on a user's
-        # machine, so src/static_magic/__init__.py loads this copy explicitly.
-        mgc = build_dir / "magic" / "magic.mgc"
-        targets = [Path(self.build_lib) / "static_magic"]
-        if self.inplace:
-            targets.append(HERE / "src" / "static_magic")   # editable installs never touch build_lib
-        for dest in targets:
-            dest.mkdir(parents=True, exist_ok=True)
-            shutil.copy(mgc, dest / "magic.mgc")
+        if mgc is not None:
+            targets = [Path(self.build_lib) / "static_magic"]
+            if self.inplace:
+                targets.append(SHIPPED_MGC.parent)   # editable installs never touch build_lib
+            for dest in targets:
+                dest.mkdir(parents=True, exist_ok=True)
+                shutil.copy(mgc, dest / "magic.mgc")
 
 setup(
   version=f"{libmagic_version()}.{BINDING_REVISION}",   # -> 5.45.0; everything else lives in pyproject.toml
@@ -104,5 +131,5 @@ setup(
   package_dir={"": "src"},
   package_data={"static_magic": ["magic.mgc", "py.typed", "_magic.pyi"]},
   ext_modules=[Extension("static_magic._magic", sources=["src/_magic.c"])],
-  cmdclass={"build_ext": build_ext_static_magic, "sdist": sdist_with_configure},
+  cmdclass={"build_ext": build_ext_static_magic, "sdist": sdist_with_generated_files},
 )
